@@ -1,0 +1,11 @@
+synergy-dataset
+pandas
+pyarrow
+scikit-learn
+sentence-transformers
+chromadb
+anthropic
+fastapi
+uvicorn
+matplotlib
+python-dotenv
