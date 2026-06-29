@@ -1,0 +1,7 @@
+comparison,mean_diff,ci_95_low,ci_95_high,verdict
+Random order vs Greedy by LLM score,0.2474,0.0481,0.689,significant (CI excludes 0)
+Random order vs Relevance sampling,0.0714,-0.0852,0.2519,not distinguishable from noise
+Random order vs Uncertainty sampling,0.126,-0.0704,0.4519,not distinguishable from noise
+Greedy by LLM score vs Relevance sampling,-0.1761,-0.6111,0.0444,not distinguishable from noise
+Greedy by LLM score vs Uncertainty sampling,-0.1214,-0.5743,0.2481,not distinguishable from noise
+Relevance sampling vs Uncertainty sampling,0.0547,-0.1371,0.3481,not distinguishable from noise

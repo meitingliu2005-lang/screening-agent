@@ -32,17 +32,41 @@ Three scorers compared on the same fixed sample:
 
 Metrics: precision / recall / F1 / PR-AUC.
 
-### Study 2 — Selection efficiency (next)
-**Fixed:** the scoring method (whichever wins Study 1).
-**Varied:** the order papers are screened in.
-**Question:** does adaptively choosing what to screen next get you to high
-recall faster than a fixed/random order?
+### Study 2 — Selection efficiency
 
-Compared: random order, relevance sampling (similarity to known-relevant
-centroid), uncertainty sampling.
+**Fixed:** the relevance signal — the zero-shot LLM's already-computed
+scores, plus the embeddings cached from the RAG step. No new API calls.
+**Varied:** the order papers get screened in.
+**Question:** does adaptively choosing what to screen next reach high
+recall faster than a fixed/passive order?
 
-Metric: recall@N curves (% of true relevant papers found after screening
-N items), simulated against the dataset's ground truth.
+Four policies compared, via `src/study2.py`:
+1. **Random order** — baseline, averaged over 100 runs
+2. **Greedy by LLM score** — screen in order of the zero-shot LLM's
+   precomputed relevance score, highest first (passive, deterministic)
+3. **Relevance sampling** — adaptive: always pick the unscreened paper
+   most similar (cosine) to the centroid of relevant papers found *so
+   far*
+4. **Uncertainty sampling** — adaptive: maintain a logistic regression
+   on embeddings, retrained as labels get revealed, always pick
+   whichever unscreened paper the model is least confident about
+
+Metric: **WSS@95%** (Work Saved over Sampling) — the standard metric in
+the actual systematic-review-automation literature. It's the fraction
+of the 270 papers you could *skip* while still finding 95% of the truly
+relevant ones.
+
+**Significance testing:** a paired bootstrap over the *papers*
+themselves (1000 resamples) — not just policy randomness. Each
+resample is shared across all four policies, so pairwise WSS@95 gaps
+are paired comparisons, and even the deterministic greedy policy gets
+a real confidence interval (from sample-composition variation, since
+it has no run-to-run randomness of its own). This is the same
+"evaluate a fixed ranking under resampling" approach already validated
+for the PR-curve bootstrap in Study 1. Validated against two known
+cases before trusting it: identical orders produced an exact [0,0] CI;
+a constructed perfect-vs-worst-case ordering produced a CI entirely on
+the correct side, matching the known direction.
 
 ### Stretch: full factorial
 If time allows, cross every scorer with every selection policy to measure
@@ -69,7 +93,7 @@ research.
 - [x] RAG scorer (`src/rag.py`) — same prompt/model as zero-shot, plus 5 retrieved similar papers as context, leakage-controlled via the same CV folds
 - [x] Study 1 comparison (`src/compare_study1.py`) — including paired significance testing
 - [x] PyTorch MLP classifier on embeddings (`src/pytorch_classifier.py`) — a 4th scorer, added to showcase hands-on PyTorch model-building (the other scorers use scikit-learn or API calls, no PyTorch)
-- [ ] Study 2 (active selection policies)
+- [x] Study 2: active selection policies (`src/study2.py`) — needs zero new API calls, reuses Study 1's cached scores/embeddings
 - [ ] FastAPI serving layer
 
 ## Results so far
@@ -107,8 +131,8 @@ context did not measurably improve screening accuracy over zero-shot
 for this task. See `DEVLOG.md` for the full narrative, including why
 that might be true and what was tried along the way.
 
-Study 1 is complete. Next: Study 2 (active selection policies) or a
-FastAPI serving layer, depending on which direction is more useful next.
+Study 1 is complete with four scorers compared. Study 2 (below) builds
+on these results directly — see "Study 2 results" further down.
 
 ### Why a 4th scorer (PyTorch MLP)
 
@@ -173,6 +197,74 @@ alternative to TF-IDF with a genuine recall advantage — but on the more
 robust full-curve metric (PR-AUC), it's clearly the weakest of the
 three non-baseline approaches, and that gap to the LLM scorers is the
 one backed by the strongest statistical evidence in the comparison.
+
+## Study 2 results
+
+| Policy | Mean papers to 95% recall | WSS@95% |
+|---|---|---|
+| Greedy by LLM score | 202.0 | 0.252 |
+| Uncertainty sampling | 216.4 | 0.199 |
+| Relevance sampling | 229.6 | 0.150 |
+| Random order | 251.6 | 0.068 |
+
+All three real policies beat random, but gains are modest, not dramatic
+— the best (greedy by LLM score) only saves 25% of screening effort,
+far below the 40-60%+ sometimes reported in the active-learning
+literature. Worth being explicit about why: WSS@95 is bottlenecked by
+the *worst-ranked* true positives, not average ranking quality — a
+policy can rank most relevant papers well and still need to screen deep
+to catch a long tail of atypical ones. With only 270 papers and 40
+positives, there's also less room for any policy to show a dramatic
+effect than on a corpus of thousands.
+
+**The more interesting finding:** greedy by LLM score beats both
+embedding-based adaptive policies, and relevance sampling (also
+embedding-similarity-driven) is the *weakest* of the three real
+policies. This is the same limitation Study 1 found with RAG —
+embedding similarity in this domain captures topical resemblance, not
+whatever deeper judgment the LLM's direct evaluation is making. Same
+conclusion, surfacing independently in two different experiments.
+
+**Significance testing — and this changed the conclusion substantially.**
+The point estimates above suggested all three real policies beat random.
+The rigorous version says something different: **only "Random vs.
+Greedy by LLM score" is statistically significant.** Relevance sampling
+and uncertainty sampling's apparent advantages over random (point
+estimates of 0.150 and 0.199 vs. random's 0.068) are **not
+distinguishable from noise** once sampling uncertainty is accounted for
+— with only 40 positive papers, those gaps could just as easily be this
+particular sample's luck as a real effect.
+
+| Policy | Bootstrap mean WSS@95 | 95% CI |
+|---|---|---|
+| Greedy by LLM score | 0.313 | [0.174, 0.737] |
+| Uncertainty sampling | 0.191 | [0.052, 0.515] |
+| Relevance sampling | 0.137 | [0.048, 0.304] |
+| Random order | 0.065 | [0.007, 0.182] |
+
+**The real conclusion: only the LLM's direct score provides a
+statistically defensible advantage over random screening.** Neither
+embedding-based policy clears that bar.
+
+**This connects directly to Study 1, and it's the cleanest finding in
+the whole project.** In Study 1, the LLM's direct zero-shot judgment
+beat embedding-based RAG retrieval (no measurable gain from retrieval)
+and beat a classifier trained on embeddings (PyTorch MLP, the weakest
+scorer). In Study 2, the LLM's direct score is the only policy that
+statistically beats random — both the embedding-similarity policy and
+the locally-trained-model policy fail to clear that bar. **Across both
+experiments, anything built on top of the embeddings — retrieval, a
+trained classifier, an adaptive sampling strategy — consistently
+underperforms or fails to show a robust advantage over the LLM's direct
+judgment.** That conclusion shows up independently in two separate
+studies, which is what makes it credible rather than a coincidence.
+
+One honest caveat: greedy's bootstrap mean (0.313) is noticeably higher
+than its raw point estimate (0.252), with a wide CI ([0.174, 0.737]).
+Not a bug — with only 40 positives, "papers needed to hit 95% recall"
+is a discontinuous statistic that can swing under resampling. The
+direction of the effect is solid; its exact magnitude is genuinely
+uncertain given this sample size.
 
 ## Setup
 

@@ -1,0 +1,5 @@
+policy,mean_papers_to_95pct_recall,wss_at_95
+Greedy by LLM score,202.0,0.2519
+Uncertainty sampling,216.4,0.1985
+Relevance sampling,229.6,0.1497
+Random order,251.6,0.0681
