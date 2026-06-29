@@ -63,13 +63,116 @@ research.
 
 - [x] Repo scaffolding
 - [x] Dataset acquired and cached (`src/data.py`)
-- [ ] TF-IDF + logistic regression baseline
-- [ ] Embedding + vector store indexing
-- [ ] Zero-shot LLM scorer
-- [ ] RAG scorer
-- [ ] Study 1 evaluation + comparison plot
+- [x] TF-IDF + logistic regression baseline (`src/baseline.py`)
+- [x] Zero-shot LLM scorer (`src/zero_shot.py`, `src/llm_common.py`) — uses OpenAI `gpt-5.4-mini`
+- [x] Embedding + retrieval (`src/embed.py`) — OpenAI `text-embedding-3-small`, in-memory cosine similarity (no vector DB needed at this scale)
+- [x] RAG scorer (`src/rag.py`) — same prompt/model as zero-shot, plus 5 retrieved similar papers as context, leakage-controlled via the same CV folds
+- [x] Study 1 comparison (`src/compare_study1.py`) — including paired significance testing
+- [x] PyTorch MLP classifier on embeddings (`src/pytorch_classifier.py`) — a 4th scorer, added to showcase hands-on PyTorch model-building (the other scorers use scikit-learn or API calls, no PyTorch)
 - [ ] Study 2 (active selection policies)
 - [ ] FastAPI serving layer
+
+## Results so far
+
+**TF-IDF + logistic regression baseline** (5-fold stratified CV, n=270, 40 positives):
+
+| Precision | Recall | F1 | PR-AUC |
+|---|---|---|---|
+| 0.478 | 0.275 | 0.349 | 0.445 |
+
+**Zero-shot LLM** (`gpt-5.4-mini`, no retrieved context, n=270):
+
+| Precision | Recall | F1 | PR-AUC |
+|---|---|---|---|
+| 0.750 | 0.675 | 0.711 | 0.766 |
+
+The zero-shot LLM beats the baseline on every metric — most importantly
+recall, which is the metric that matters most for screening (missing a
+truly relevant paper is the costly error). The baseline caught 27.5% of
+truly relevant papers; the zero-shot LLM caught 67.5%.
+
+**RAG LLM** (`gpt-5.4-mini`, same prompt + 5 retrieved similar papers as context, n=270):
+
+| Precision | Recall | F1 | PR-AUC |
+|---|---|---|---|
+| 0.730 | 0.675 | 0.701 | 0.763 |
+
+### Study 1 conclusion
+
+Both LLM scorers are significantly better than the TF-IDF baseline
+(McNemar's test, p<0.01 for both). But **zero-shot vs. RAG is not
+statistically distinguishable** (p=1.0) — the small gap between them is
+noise, not a real effect. The honest finding: retrieval-augmented
+context did not measurably improve screening accuracy over zero-shot
+for this task. See `DEVLOG.md` for the full narrative, including why
+that might be true and what was tried along the way.
+
+Study 1 is complete. Next: Study 2 (active selection policies) or a
+FastAPI serving layer, depending on which direction is more useful next.
+
+### Why a 4th scorer (PyTorch MLP)
+
+The first three scorers use scikit-learn (baseline) or OpenAI API calls
+(zero-shot, RAG) — no hands-on model-building anywhere. The PyTorch MLP
+scorer trains a small neural net directly on the embeddings already
+cached by the RAG step (no new API calls needed), evaluated through
+the same 5-fold CV as everything else.
+
+Worth being explicit about: with 1536-dimensional embeddings and only
+~216 training examples per fold, this is exactly the high-dimension/
+low-sample-size setup that overfits a careless neural net. Guards
+against that: a single small hidden layer (32 units), weight decay,
+and early stopping on a validation slice carved out of each fold's
+training data (not the test fold itself). Sanity-checked by confirming
+that with pure-noise input, out-of-fold PR-AUC sits right at the
+dataset's true positive rate rather than being spuriously inflated —
+i.e., no leakage, no false confidence from overfitting.
+
+### A subtlety in the significance testing
+
+McNemar's test answers "which model is more often right at a 0.5
+threshold" — under class imbalance, that can point the opposite
+direction from "which model is better at the metric that actually
+matters." Concretely: PyTorch MLP has much higher recall than TF-IDF
+but lower precision, so it makes *more total misclassifications*
+overall — McNemar's correctly flags this pair as significant, but in
+raw-correctness terms, not in recall terms.
+
+Added a second test (`run_bootstrap_tests` in `compare_study1.py`):
+bootstrap confidence intervals directly on the metric gap (recall,
+PR-AUC) rather than raw correctness — resample the papers with
+replacement many times, recompute the gap each time, check whether
+zero falls inside the resulting interval. This is the test that
+actually answers "is a recall advantage real," separate from "which
+scorer is more often right." See `DEVLOG.md` for the full reasoning.
+
+### Final reconciled result (all three significance tests)
+
+- **PyTorch vs. TF-IDF:** PyTorch's recall advantage is real (95% CI
+  [+0.125, +0.474]), but its PR-AUC is statistically tied with TF-IDF
+  (CI includes 0). Recall measures one threshold; PR-AUC measures the
+  whole ranking curve — improving at one specific threshold without
+  improving the overall ranking suggests the gain is partly about where
+  PyTorch's scores happen to sit relative to 0.5, not a fundamentally
+  better-ordered set of predictions.
+- **PyTorch vs. the LLM scorers:** recall looks similar (not
+  statistically distinguishable — only 40 positive examples makes this
+  a low-powered comparison), but PR-AUC clearly and significantly
+  favors zero-shot/RAG (CI entirely negative). This is the more
+  trustworthy comparison, and it says PyTorch is the weakest of the
+  three non-baseline scorers.
+- **Why McNemar, recall, and PR-AUC disagree for the same pairs:** they
+  answer different questions. McNemar tests raw accuracy (where
+  PyTorch's low precision hurts it under class imbalance); the
+  bootstrap tests isolate one specific metric each. A model can
+  legitimately win one and lose another — that's not a contradiction,
+  it's three different lenses on the same predictions.
+
+**Bottom line:** PyTorch is a real, free, fast, locally-trained
+alternative to TF-IDF with a genuine recall advantage — but on the more
+robust full-curve metric (PR-AUC), it's clearly the weakest of the
+three non-baseline approaches, and that gap to the LLM scorers is the
+one backed by the strongest statistical evidence in the comparison.
 
 ## Setup
 
@@ -78,6 +181,9 @@ pip install -r requirements.txt
 python src/data.py        # fetches + caches the review locally
 ```
 
-You'll need an `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) set as an
-environment variable once we get to the LLM scorers — put it in a local
-`.env` file (not committed).
+You'll need an `OPENAI_API_KEY` set as an environment variable for the
+LLM-based scorers — put it in a local `.env` file in the project root
+(not committed to git):
+```
+OPENAI_API_KEY=sk-...
+```

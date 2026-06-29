@@ -1,0 +1,13 @@
+comparison,metric,mean_diff,ci_95_low,ci_95_high,n_valid_bootstrap,verdict
+TF-IDF + LR vs Zero-shot LLM,recall,0.4004,0.2439,0.5641,2000,significant (95% CI excludes 0)
+TF-IDF + LR vs RAG LLM,recall,0.4003,0.2609,0.5581,2000,significant (95% CI excludes 0)
+TF-IDF + LR vs PyTorch MLP,recall,0.3028,0.125,0.4737,2000,significant (95% CI excludes 0)
+Zero-shot LLM vs RAG LLM,recall,-0.0002,-0.0714,0.075,2000,not distinguishable from noise
+Zero-shot LLM vs PyTorch MLP,recall,-0.0976,-0.2927,0.0909,2000,not distinguishable from noise
+RAG LLM vs PyTorch MLP,recall,-0.0975,-0.2821,0.0784,2000,not distinguishable from noise
+TF-IDF + LR vs Zero-shot LLM,pr_auc,0.3116,0.1798,0.4536,2000,significant (95% CI excludes 0)
+TF-IDF + LR vs RAG LLM,pr_auc,0.311,0.1721,0.4599,2000,significant (95% CI excludes 0)
+TF-IDF + LR vs PyTorch MLP,pr_auc,0.023,-0.1178,0.1589,2000,not distinguishable from noise
+Zero-shot LLM vs RAG LLM,pr_auc,-0.0005,-0.0481,0.0434,2000,not distinguishable from noise
+Zero-shot LLM vs PyTorch MLP,pr_auc,-0.2886,-0.4489,-0.1306,2000,significant (95% CI excludes 0)
+RAG LLM vs PyTorch MLP,pr_auc,-0.288,-0.4471,-0.1231,2000,significant (95% CI excludes 0)

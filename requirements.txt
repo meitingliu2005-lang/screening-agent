@@ -1,10 +1,8 @@
 synergy-dataset
 pandas
-pyarrow
 scikit-learn
-sentence-transformers
-chromadb
-anthropic
+openai
+torch
 fastapi
 uvicorn
 matplotlib
