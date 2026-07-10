@@ -265,17 +265,3 @@ Not a bug — with only 40 positives, "papers needed to hit 95% recall"
 is a discontinuous statistic that can swing under resampling. The
 direction of the effect is solid; its exact magnitude is genuinely
 uncertain given this sample size.
-
-## Setup
-
-```bash
-pip install -r requirements.txt
-python src/data.py        # fetches + caches the review locally
-```
-
-You'll need an `OPENAI_API_KEY` set as an environment variable for the
-LLM-based scorers — put it in a local `.env` file in the project root
-(not committed to git):
-```
-OPENAI_API_KEY=sk-...
-```

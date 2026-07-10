@@ -1,7 +1,7 @@
 # Development Log
 
 A running narrative of what was built, why, what broke, and what we
-found — written for human reading (interview prep, future-you), as a
+found — written for human reading (interview prep), as a
 companion to the terser git commit history.
 
 ---
