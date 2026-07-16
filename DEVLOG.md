@@ -1,11 +1,5 @@
 # Development Log
 
-A running narrative of what was built, why, what broke, and what we
-found — written for human reading (interview prep), as a
-companion to the terser git commit history.
-
----
-
 ## Session 1 — Scaffolding, dataset, baseline
 
 **Goal:** stand up the repo and get one real number on the board.

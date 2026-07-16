@@ -1,8 +1,8 @@
 # Screening Agent
 
-A small research project comparing how different scoring methods perform
-at literature screening (the title/abstract triage step of a systematic
-review), using a dataset with real human-reviewer ground truth.
+A research project comparing how different AI-based scoring methods perform
+at literature screening — the title/abstract triage stage of systematic
+reviews — using a dataset with real human-reviewer ground truth.
 
 This grew out of a blicket-detector project comparing how LLM agents vs.
 children explore a causal-learning puzzle. The throughline here is the
@@ -13,12 +13,12 @@ accuracy?**
 ## Design: two separate studies, not one tangled one
 
 RAG ("does retrieved context improve a classification decision?") and
-active learning ("which unlabeled item should I look at next?") are
-different research questions. Bundling them into one system makes it
-impossible to know what's actually responsible for any performance gain.
+active learning ("which unlabeled item should I screen next?") address
+different research questions. Separating them makes it possible to
+identify which component contributes to performance changes.
 So this project is split into two clean studies:
 
-### Study 1 — Classification quality (current focus)
+### Study 1 — Classification quality
 **Fixed:** sample order (a static random sample, no adaptive selection).
 **Varied:** the scoring method.
 **Question:** does retrieval-augmented context actually improve relevance
@@ -79,9 +79,40 @@ active selection, or does it help regardless?
 of 26 systematic reviews with real inclusion/exclusion labels. This
 project uses **Sep_2021**: "The rodent object-in-context task: a
 systematic review and meta-analysis of important variables" — 270 usable
-records, ~14.8% included. Chosen for manageable size (cheap/fast to
-iterate on) and topical proximity to cognitive psychology / memory
-research.
+records, ~14.8% included. Chosen because it provides a manageable benchmark size for controlled
+experimentation while remaining directly connected to cognitive psychology
+and memory research.
+
+## Project Structure
+
+```
+screening-agent/
+│
+├── data/
+│   └── Sep_2021.csv                 # SYNERGY benchmark dataset
+│
+├── src/
+│   ├── data.py                      # Data loading and preprocessing
+│   ├── baseline.py                  # TF-IDF + Logistic Regression baseline
+│   ├── embed.py                     # Generate and cache document embeddings
+│   ├── rag.py                       # RAG-based screening pipeline
+│   ├── llm_common.py                # Shared LLM utilities/prompts
+│   ├── pytorch_classifier.py        # Neural classifier experiments
+│   ├── compare_study1.py            # Evaluate Study 1 model comparison
+│   └── study2.py                    # Retrieval policy experiments
+│
+├── results/
+│   ├── summaries/                   # Main evaluation
+│   ├── predictions/                 # Model Outputs
+│   └── figures/                     # PR curves and comparisons
+│  
+├── .env
+├── .gitignore
+├── DEVELOG.md                       # Development process & Technical notes
+├── README.md
+└── requirements.txt
+
+```
 
 ## Status
 
@@ -93,10 +124,9 @@ research.
 - [x] RAG scorer (`src/rag.py`) — same prompt/model as zero-shot, plus 5 retrieved similar papers as context, leakage-controlled via the same CV folds
 - [x] Study 1 comparison (`src/compare_study1.py`) — including paired significance testing
 - [x] PyTorch MLP classifier on embeddings (`src/pytorch_classifier.py`) — a 4th scorer, added to showcase hands-on PyTorch model-building (the other scorers use scikit-learn or API calls, no PyTorch)
-- [x] Study 2: active selection policies (`src/study2.py`) — needs zero new API calls, reuses Study 1's cached scores/embeddings
-- [ ] FastAPI serving layer
+- [x] Study 2: active selection policies (`src/study2.py`) — reuses Study 1's cached scores/embeddings
 
-## Results so far
+## Results
 
 **TF-IDF + logistic regression baseline** (5-fold stratified CV, n=270, 40 positives):
 
@@ -121,7 +151,7 @@ truly relevant papers; the zero-shot LLM caught 67.5%.
 |---|---|---|---|
 | 0.730 | 0.675 | 0.701 | 0.763 |
 
-### Study 1 conclusion
+### Study 1 Conclusion
 
 Both LLM scorers are significantly better than the TF-IDF baseline
 (McNemar's test, p<0.01 for both). But **zero-shot vs. RAG is not
@@ -142,15 +172,9 @@ scorer trains a small neural net directly on the embeddings already
 cached by the RAG step (no new API calls needed), evaluated through
 the same 5-fold CV as everything else.
 
-Worth being explicit about: with 1536-dimensional embeddings and only
-~216 training examples per fold, this is exactly the high-dimension/
-low-sample-size setup that overfits a careless neural net. Guards
-against that: a single small hidden layer (32 units), weight decay,
-and early stopping on a validation slice carved out of each fold's
-training data (not the test fold itself). Sanity-checked by confirming
-that with pure-noise input, out-of-fold PR-AUC sits right at the
-dataset's true positive rate rather than being spuriously inflated —
-i.e., no leakage, no false confidence from overfitting.
+Worth noting: this is a high-dimensional, low-sample-size setting.
+To reduce overfitting risk, the model uses a small architecture,
+weight decay, early stopping, and leakage-controlled cross-validation.
 
 ### A subtlety in the significance testing
 
@@ -170,7 +194,7 @@ zero falls inside the resulting interval. This is the test that
 actually answers "is a recall advantage real," separate from "which
 scorer is more often right." See `DEVLOG.md` for the full reasoning.
 
-### Final reconciled result (all three significance tests)
+### Final Result (all three significance tests)
 
 - **PyTorch vs. TF-IDF:** PyTorch's recall advantage is real (95% CI
   [+0.125, +0.474]), but its PR-AUC is statistically tied with TF-IDF
@@ -198,7 +222,7 @@ robust full-curve metric (PR-AUC), it's clearly the weakest of the
 three non-baseline approaches, and that gap to the LLM scorers is the
 one backed by the strongest statistical evidence in the comparison.
 
-## Study 2 results
+## Study 2 Results
 
 | Policy | Mean papers to 95% recall | WSS@95% |
 |---|---|---|
@@ -217,51 +241,7 @@ to catch a long tail of atypical ones. With only 270 papers and 40
 positives, there's also less room for any policy to show a dramatic
 effect than on a corpus of thousands.
 
-**The more interesting finding:** greedy by LLM score beats both
-embedding-based adaptive policies, and relevance sampling (also
-embedding-similarity-driven) is the *weakest* of the three real
-policies. This is the same limitation Study 1 found with RAG —
-embedding similarity in this domain captures topical resemblance, not
-whatever deeper judgment the LLM's direct evaluation is making. Same
-conclusion, surfacing independently in two different experiments.
-
-**Significance testing — and this changed the conclusion substantially.**
-The point estimates above suggested all three real policies beat random.
-The rigorous version says something different: **only "Random vs.
-Greedy by LLM score" is statistically significant.** Relevance sampling
-and uncertainty sampling's apparent advantages over random (point
-estimates of 0.150 and 0.199 vs. random's 0.068) are **not
-distinguishable from noise** once sampling uncertainty is accounted for
-— with only 40 positive papers, those gaps could just as easily be this
-particular sample's luck as a real effect.
-
-| Policy | Bootstrap mean WSS@95 | 95% CI |
-|---|---|---|
-| Greedy by LLM score | 0.313 | [0.174, 0.737] |
-| Uncertainty sampling | 0.191 | [0.052, 0.515] |
-| Relevance sampling | 0.137 | [0.048, 0.304] |
-| Random order | 0.065 | [0.007, 0.182] |
-
-**The real conclusion: only the LLM's direct score provides a
-statistically defensible advantage over random screening.** Neither
-embedding-based policy clears that bar.
-
-**This connects directly to Study 1, and it's the cleanest finding in
-the whole project.** In Study 1, the LLM's direct zero-shot judgment
-beat embedding-based RAG retrieval (no measurable gain from retrieval)
-and beat a classifier trained on embeddings (PyTorch MLP, the weakest
-scorer). In Study 2, the LLM's direct score is the only policy that
-statistically beats random — both the embedding-similarity policy and
-the locally-trained-model policy fail to clear that bar. **Across both
-experiments, anything built on top of the embeddings — retrieval, a
-trained classifier, an adaptive sampling strategy — consistently
-underperforms or fails to show a robust advantage over the LLM's direct
-judgment.** That conclusion shows up independently in two separate
-studies, which is what makes it credible rather than a coincidence.
-
-One honest caveat: greedy's bootstrap mean (0.313) is noticeably higher
-than its raw point estimate (0.252), with a wide CI ([0.174, 0.737]).
-Not a bug — with only 40 positives, "papers needed to hit 95% recall"
-is a discontinuous statistic that can swing under resampling. The
-direction of the effect is solid; its exact magnitude is genuinely
-uncertain given this sample size.
+Across both experiments, anything built on top of the embeddings —
+retrieval, a trained classifier, an adaptive sampling strategy —
+consistently underperforms or fails to show a robust advantage over the
+LLM's direct judgment.
