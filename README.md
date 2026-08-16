@@ -24,7 +24,7 @@ So this project is split into two clean studies:
 **Question:** does retrieval-augmented context actually improve relevance
 judgments, compared to a classic baseline and a zero-shot LLM?
 
-Three scorers compared on the same fixed sample:
+Primary comparison — three scorers compared on the same fixed sample:
 1. TF-IDF + logistic regression (the standard published baseline for this
    kind of task)
 2. Zero-shot LLM judgment (no retrieved context)
@@ -94,6 +94,7 @@ screening-agent/
 ├── src/
 │   ├── data.py                      # Data loading and preprocessing
 │   ├── baseline.py                  # TF-IDF + Logistic Regression baseline
+│   ├── zero_shot.py                 # Zero-shot LLM scorer
 │   ├── embed.py                     # Generate and cache document embeddings
 │   ├── rag.py                       # RAG-based screening pipeline
 │   ├── llm_common.py                # Shared LLM utilities/prompts
@@ -106,9 +107,8 @@ screening-agent/
 │   ├── predictions/                 # Model Outputs
 │   └── figures/                     # PR curves and comparisons
 │  
-├── .env
 ├── .gitignore
-├── DEVELOG.md                       # Development process & Technical notes
+├── DEVLOG.md                       # Development process & Technical notes
 ├── README.md
 └── requirements.txt
 
@@ -240,6 +240,8 @@ policy can rank most relevant papers well and still need to screen deep
 to catch a long tail of atypical ones. With only 270 papers and 40
 positives, there's also less room for any policy to show a dramatic
 effect than on a corpus of thousands.
+
+Significance testing (paired bootstrap, 1000 resamples): of six pairwise comparisons, only greedy by LLM score vs. random order reached statistical significance. Both embedding-based adaptive policies (relevance sampling, uncertainty sampling) showed higher point estimates than random, but neither advantage was distinguishable from sampling noise given only 40 positive papers.
 
 Across both experiments, anything built on top of the embeddings —
 retrieval, a trained classifier, an adaptive sampling strategy —
